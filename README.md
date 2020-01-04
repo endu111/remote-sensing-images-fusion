@@ -1,6 +1,6 @@
 # remote-sensing-images-fusion
-remote sensing images fusion,a topic similar to super resolution
+remote sensing images fusion,sometimes is a topic similar to super resolution
 
-algorithms now:
+language:python
 
-1.starfm(vectorized for accelerating,support blocking image)
+algorithms now:1.starfm(vectorized for accelerating,support blocking image)
