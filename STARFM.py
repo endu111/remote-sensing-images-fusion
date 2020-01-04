@@ -92,6 +92,7 @@ def starfm(landsat0, modis0,modis1,w,times):
     m1=makeadd(modis1,160000).reshape(newup*newright)
     #####divide several parts if you dont have enough memory
     left,one=makedivid(up*right,times,up)
+    #####the choosed similar pixels select paraments
     d=[0.1,0.1,0.1]
     l1=dividstarfm(one[0],left[0],l0,m0,m1,right,up,newright,newup,w,d)
     if times>1:
