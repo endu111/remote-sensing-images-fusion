@@ -1,5 +1,5 @@
 # remote-sensing-images-fusion
-remote sensing images fusion,a task between "missing time series remote sensing image reconstruction" and "super resolution"
+remote sensing images fusion,a task between "missing time series remote sensing images reconstruction" and "super resolution"
 
 language:python
 
