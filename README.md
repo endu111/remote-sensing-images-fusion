@@ -1,5 +1,5 @@
 # remote-sensing-images-fusion
-remote sensing images fusion,sometimes just a topic similar to super resolution.there are some old methods now
+remote sensing images fusion,a task between "missing time series remote sensing image reconstruction" and "super resolution"
 
 language:python
 
