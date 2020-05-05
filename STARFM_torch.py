@@ -118,17 +118,8 @@ def starfm_onepart(l1,m1,m2,similar,thresholdmax,window,outshape,dist):
 ###starfm for allpart#########################################################
 def starfm_main(l1r,m1r,m2r,param):
     #get start time
-    time_start=time.time()
-    ######
-    shape=l1r.shape
-    l1r=torch.tensor(l1r.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
-    m1r=torch.tensor(m1r.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
-    m2r=torch.tensor(m2r.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    time_start=time.time()  
     device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    l1r=l1r.to(device)
-    m1r=m1r.to(device)
-    m2r=m2r.to(device)    
-
     #read parameters
     parts_shape=param['part_shape']
     window=param['window_size']
@@ -141,7 +132,7 @@ def starfm_main(l1r,m1r,m2r,param):
     threshold=spectral_similar_threshold(clusters,l1r[:,NIRindex:NIRindex+1],l1r[:,redindex:redindex+1])    
     print('similar threshold (NIR,red)',threshold)
     ####shape
-    imageshape=shape#(shape[0],shape[1],shape[2])
+    imageshape=(l1r.shape[1],l1r.shape[2],l1r.shape[3])
     row=imageshape[1]//parts_shape[0]+1
     col=imageshape[2]//parts_shape[1]+1
     padrow=window[0]//2
@@ -189,11 +180,7 @@ def starfm_main(l1r,m1r,m2r,param):
                                                           m2[0,band][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),
                                                           similar,thresholdmax,window,rawindexshape,dist)
     
-    #tensor to numpy
-    if device.type=='cuda':
-        l2_fake=l2_fake[0].cpu().numpy()
-    else:
-        l2_fake=l2_fake[0].numpy()
+
     #time cost
     time_end=time.time()    
     print('now over,use time {:.4f}'.format(time_end-time_start))  
@@ -206,19 +193,39 @@ if __name__ == "__main__":
     l2file='L72002311_SZ_B432_30m.tif'
     m1file='MOD09_2000306_SZ_B214_250m.tif'
     m2file='MOD09_2002311_SZ_B214_250m.tif'
+    
     ##param
     param={'part_shape':(110,110),
            'window_size':(31,31),
            'clusters':5,
            'NIRindex':1,'redindex':0,
            'sital':0.001,'sitam':0.001}
-    #read images from files
+    
+    ##read images from files(numpy)
     l1=imgread(l1file)
     m1=imgread(m1file)
     m2=imgread(m2file)
     l2_gt=imgread(l2file)    
-    ##predicte
-    l2_fake=starfm_main(l1,m1,m2,param)
+    
+    ##numpy to tensor
+    shape=l1.shape
+    l1r=torch.tensor(l1.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    m1r=torch.tensor(m1.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    m2r=torch.tensor(m2.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    l1r=l1r.to(device)
+    m1r=m1r.to(device)
+    m2r=m2r.to(device)      
+    
+    ##predicte(tensor input —> tensor output)
+    l2_fake=starfm_main(l1r,m1r,m2r,param)
+    print(l2_fake.shape)
+    
+    ##tensor to numpy
+    if device.type=='cuda':
+        l2_fake=l2_fake[0].cpu().numpy()
+    else:
+        l2_fake=l2_fake[0].numpy()    
     
     ##show results 
     #transform:(chanel,H,W) to (H,W,chanel)
@@ -248,7 +255,4 @@ if __name__ == "__main__":
     
     
     
-    
-    
-    
-    
+   
