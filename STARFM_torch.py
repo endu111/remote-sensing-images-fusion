@@ -100,7 +100,7 @@ def starfm_onepart(l1,m1,m2,similar,thresholdmax,window,outshape,dist):
     #time and space weight
     w=caculate_weight(l1m1,m1m2)
     w=1/(w*dist)
-    #similar pixels: 1:by threshold 2:by classifier
+    #similar pixels filter
     wmask=torch.zeros(l1.shape,dtype=torch.float32).to(device)  
     wmask=weight_bythreshold(wmask,l1m1,thresholdmax[0]) 
     wmask=weight_bythreshold(wmask,m1m2,thresholdmax[1])
@@ -165,7 +165,7 @@ def starfm_main(l1r,m1r,m2r,param):
             col_pad=np.arange(col_index[0],col_index[len(col_index)-1]+window[1])    
             padindex=np.meshgrid(row_pad,col_pad)
             padindexshape=(col_pad.shape[0],row_pad.shape[0])
-            ####caculate initial similar pixels
+            ####caculate initial similar pixels,1:by thresholds(select) 2:by classifier
             NIR_similar=caculate_similar(l1[0,NIRindex][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),threshold[0],window)   
             red_similar=caculate_similar(l1[0,redindex][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),threshold[1],window)  
             similar=NIR_similar*red_similar      
