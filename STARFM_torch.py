@@ -51,18 +51,16 @@ def weight_bythreshold(weight,data,threshold):
 
 ###initial similar pixels tools################################################
 def spectral_similar_threshold(clusters,NIR,red):
-    thresholdNIR=NIR.std()*2//clusters
-    thresholdred=red.std()*2//clusters
+    thresholdNIR=NIR.std()*2/clusters
+    thresholdred=red.std()*2/clusters
     return  (thresholdNIR,thresholdred)  
 
 def caculate_similar(l1,threshold,window):
     #read l1
-    l1=torch.from_numpy(l1.reshape(1,1,l1.shape[0],l1.shape[1]))
     device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    l1=l1.to(device)
     l1=nn.functional.unfold(l1,window)    
     #caculate similar
-    weight=torch.zeros(l1.shape).to(device)  
+    weight=torch.zeros(l1.shape,dtype=torch.float32).to(device)  
     centerloc=( l1.size()[1]-1)//2
     weight=weight_bythreshold(weight,abs(l1-l1[:,centerloc:centerloc+1,:]) ,threshold)
     return weight
@@ -74,20 +72,12 @@ def classifier(l1):
 ###similar pixels filter tools#################################################
 def allband_arrayindex(array,indexarray,rawindexshape):
     shape=array.shape
-    newarray=np.zeros(rawindexshape)
-    for band in range(shape[0]):
-        newarray[band]=array[band][indexarray]
+    newarray=torch.zeros(rawindexshape,dtype=torch.float32).cuda()
+    for band in range(shape[1]):
+        newarray[0,band]=array[0,band][indexarray]
     return newarray
 
 def similar_filter(l1,m1,m2,sital,sitam):
-    shape=l1.shape
-    l1=torch.from_numpy(l1.reshape(1,shape[0],shape[1],shape[2]))
-    m1=torch.from_numpy(m1.reshape(1,shape[0],shape[1],shape[2]))
-    m2=torch.from_numpy(m2.reshape(1,shape[0],shape[1],shape[2]))
-    device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    l1=l1.to(device)
-    m1=m1.to(device)
-    m2=m2.to(device)
     l1m1=abs(l1-m1)
     m1m2=abs(m2-m1)
     #####
@@ -96,18 +86,10 @@ def similar_filter(l1,m1,m2,sital,sitam):
     return (l1m1,m1m2)
 
 ###starfm for onepart##########################################################
-def starfm_onepart(l1,m1,m2,similar,thresholdmax,window,outshape):
+def starfm_onepart(l1,m1,m2,similar,thresholdmax,window,outshape,dist):
     #####pytorch GPU mode 
     outshape=outshape
-    shape=l1.shape
-    l1=torch.from_numpy(l1.reshape(1,1,shape[0],shape[1]))
-    m1=torch.from_numpy(m1.reshape(1,1,shape[0],shape[1]))
-    m2=torch.from_numpy(m2.reshape(1,1,shape[0],shape[1]))
     device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    l1=l1.to(device)
-    m1=m1.to(device)
-    m2=m2.to(device)
-    
     #####img to col
     l1=nn.functional.unfold(l1,window)
     m1=nn.functional.unfold(m1,window)
@@ -115,13 +97,11 @@ def starfm_onepart(l1,m1,m2,similar,thresholdmax,window,outshape):
     l1m1=abs(l1-m1)
     m1m2=abs(m2-m1)
     #####caculate weights
-    #distance weight
-    dist=nn.functional.unfold(torch.from_numpy(indexdistance(window)).reshape(1,1,window[0],window[1]),window).to(device)
     #time and space weight
     w=caculate_weight(l1m1,m1m2)
     w=1/(w*dist)
     #similar pixels: 1:by threshold 2:by classifier
-    wmask=torch.zeros(l1.shape).to(device)  
+    wmask=torch.zeros(l1.shape,dtype=torch.float32).to(device)  
     wmask=weight_bythreshold(wmask,l1m1,thresholdmax[0]) 
     wmask=weight_bythreshold(wmask,m1m2,thresholdmax[1])
     #mask
@@ -134,16 +114,21 @@ def starfm_onepart(l1,m1,m2,similar,thresholdmax,window,outshape):
     l2=l2.sum(1).reshape(1,1,l2.shape[2])
     #col to img
     l2=nn.functional.fold(l2,outshape,(1,1))
-    #tensor to numpy
-    if device.type=='cuda':
-        l2_numpy=l2[0,0,:,:].cpu().numpy()
-    else:
-        l2_numpy=l2[0,0,:,:].numpy()
-    return l2_numpy
+    return l2[0,0]
 ###starfm for allpart#########################################################
 def starfm_main(l1r,m1r,m2r,param):
     #get start time
     time_start=time.time()
+    ######
+    shape=l1r.shape
+    l1r=torch.tensor(l1r.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    m1r=torch.tensor(m1r.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    m2r=torch.tensor(m2r.reshape(1,shape[0],shape[1],shape[2]) ,dtype=torch.float32)
+    device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    l1r=l1r.to(device)
+    m1r=m1r.to(device)
+    m2r=m2r.to(device)    
+
     #read parameters
     parts_shape=param['part_shape']
     window=param['window_size']
@@ -153,27 +138,29 @@ def starfm_main(l1r,m1r,m2r,param):
     sital=param['sital']
     sitam=param['sitam']
     #caculate initial similar pixels threshold
-    threshold=spectral_similar_threshold(clusters,l1r[NIRindex],l1r[redindex])    
+    threshold=spectral_similar_threshold(clusters,l1r[:,NIRindex:NIRindex+1],l1r[:,redindex:redindex+1])    
+    print('similar threshold (NIR,red)',threshold)
     ####shape
-    imageshape=l1r.shape
+    imageshape=shape#(shape[0],shape[1],shape[2])
     row=imageshape[1]//parts_shape[0]+1
     col=imageshape[2]//parts_shape[1]+1
     padrow=window[0]//2
     padcol=window[1]//2
     #get output data
-    l2_fake=np.zeros(imageshape)   
+    l2_fake=torch.zeros(l1r.shape,dtype=torch.float32).to(device)  
     #####padding constant for conv;STARFM use Inverse distance weight(1/w),better to avoid 0 and NAN(1/0),or you can use another distance measure
     constant1=10
     constant2=20
     constant3=30
-    l1=np.pad( l1r,((0,0),(padrow,padcol),(padrow,padcol)),'constant', constant_values=(constant1,constant1))
-    m1=np.pad( m1r,((0,0),(padrow,padcol),(padrow,padcol)),'constant', constant_values=(constant2,constant2))
-    m2=np.pad( m2r,((0,0),(padrow,padcol),(padrow,padcol)),'constant', constant_values=(constant3,constant3))
+    l1=torch.nn.functional.pad( l1r,(padrow,padcol,padrow,padcol),'constant', constant1)
+    m1=torch.nn.functional.pad( m1r,(padrow,padcol,padrow,padcol),'constant', constant2)
+    m2=torch.nn.functional.pad( m2r,(padrow,padcol,padrow,padcol),'constant', constant3)
     #split parts , get index and  run for every part
     row_part=np.array_split( np.arange(imageshape[1]), row , axis = 0) 
     col_part=np.array_split( np.arange(imageshape[2]),  col, axis = 0)  
     print('Split into {} parts,row number: {},col number: {}'.format(len(row_part)*len(row_part),len(row_part),len(row_part)))
-    
+    dist=nn.functional.unfold(torch.tensor(  indexdistance(window),dtype=torch.float32).reshape(1,1,window[0],window[1]),window).to(device)
+
     for rnumber,row_index in enumerate(row_part):
         for cnumber,col_index in enumerate(col_part):
             ####run for part: (rnumber,cnumber)
@@ -186,17 +173,27 @@ def starfm_main(l1r,m1r,m2r,param):
             row_pad=np.arange(row_index[0],row_index[len(row_index)-1]+window[0])
             col_pad=np.arange(col_index[0],col_index[len(col_index)-1]+window[1])    
             padindex=np.meshgrid(row_pad,col_pad)
+            padindexshape=(col_pad.shape[0],row_pad.shape[0])
             ####caculate initial similar pixels
-            NIR_similar=caculate_similar(l1[NIRindex][ padindex ],threshold[0],window)   
-            red_similar=caculate_similar(l1[redindex][ padindex ],threshold[1],window)  
-            similar=NIR_similar*red_similar       
+            NIR_similar=caculate_similar(l1[0,NIRindex][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),threshold[0],window)   
+            red_similar=caculate_similar(l1[0,redindex][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),threshold[1],window)  
+            similar=NIR_similar*red_similar      
             ####caculate threshold used for similar_pixels_filter  
-            thresholdmax=similar_filter( allband_arrayindex(l1r,rawindex,(imageshape[0],rawindexshape[0],rawindexshape[1])),
-                                        allband_arrayindex(m1r,rawindex,(imageshape[0],rawindexshape[0],rawindexshape[1])) , 
-                                        allband_arrayindex(m2r,rawindex,(imageshape[0],rawindexshape[0],rawindexshape[1])),sital,sitam)
+            thresholdmax=similar_filter( allband_arrayindex(l1r,rawindex,(1,imageshape[0],rawindexshape[0],rawindexshape[1])),
+                                        allband_arrayindex(m1r,rawindex,(1,imageshape[0],rawindexshape[0],rawindexshape[1])) , 
+                                        allband_arrayindex(m2r,rawindex,(1,imageshape[0],rawindexshape[0],rawindexshape[1])),sital,sitam)
             ####run for each band
             for band in range(imageshape[0]):    
-                l2_fake[band][rawindex ]=starfm_onepart(l1[band][ padindex ],m1[band][padindex ],m2[band][ padindex ],similar,thresholdmax,window,rawindexshape)
+                l2_fake[0,band][rawindex ]=starfm_onepart(l1[0,band][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),
+                                                          m1[0,band][padindex ].view(1,1,padindexshape[0],padindexshape[1]),
+                                                          m2[0,band][ padindex ].view(1,1,padindexshape[0],padindexshape[1]),
+                                                          similar,thresholdmax,window,rawindexshape,dist)
+    
+    #tensor to numpy
+    if device.type=='cuda':
+        l2_fake=l2_fake[0].cpu().numpy()
+    else:
+        l2_fake=l2_fake[0].numpy()
     #time cost
     time_end=time.time()    
     print('now over,use time {:.4f}'.format(time_end-time_start))  
@@ -210,7 +207,7 @@ if __name__ == "__main__":
     m1file='MOD09_2000306_SZ_B214_250m.tif'
     m2file='MOD09_2002311_SZ_B214_250m.tif'
     ##param
-    param={'part_shape':(100,100),
+    param={'part_shape':(110,110),
            'window_size':(31,31),
            'clusters':5,
            'NIRindex':1,'redindex':0,
